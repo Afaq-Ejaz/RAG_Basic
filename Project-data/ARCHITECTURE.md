@@ -1,81 +1,107 @@
-# Current Architecture: Learn
+# Project Architecture: Learn
 
-This document describes the architecture that currently exists in the repository. It is intentionally limited to implemented code and configured project structure; the dependency list contains several capabilities that have not been connected yet.
+This project is a small RAG-style application architecture built around PDF ingestion, embedding generation, vector storage, and a lightweight API/workflow layer. The design is simple and modular: each piece does one job, and they connect through a clear data flow.
 
-## Project Metadata
+## High-Level Architecture
 
-- **Name:** `learn`
-- **Version:** `0.1.0`
-- **Python:** `>=3.14`
-- **Author:** Afaq Ejaz
-- **Build backend:** `uv_build`
+```text
+PDF File
+   ↓
+data_loader.py
+   ↓
+Chunk text into smaller parts
+   ↓
+Google GenAI embeddings
+   ↓
+vector_db.py
+   ↓
+Qdrant vector database
+   ↓
+Similarity search / retrieval
+   ↓
+FastAPI + Inngest entry point
+```
+
+This means the application is intended to work like a basic document search system:
+- load PDF content,
+- split it into chunks,
+- create vector embeddings,
+- save and retrieve them from Qdrant,
+- expose the workflow through FastAPI and Inngest.
+
+## Core Design
+
+### 1. Application Entry Layer
+The app starts from the web/workflow layer and acts as the orchestrator.
+
+- `src/learn/main.py` — Starts the FastAPI app and registers the Inngest function responsible for the PDF workflow.
+- `pyproject.toml` — Declares project metadata, dependencies, and the app script entry.
+
+### 2. Document Processing Layer
+This layer takes raw PDF files and prepares them for search.
+
+- `src/learn/data_loader.py` — Loads a PDF, splits text into chunks, and creates embeddings using Google GenAI.
+
+Flow:
+1. PDF is read using `PDFReader`
+2. Text is chopped into chunks using `SentenceSplitter`
+3. Each chunk is converted into a vector using `genai.Client().models.embed_content`
+4. The vector output is ready for storage and similarity search
+
+### 3. Vector Storage Layer
+This layer stores vectors and handles retrieval.
+
+- `src/learn/vector_db.py` — Wraps Qdrant operations for collection creation, upserting vectors, and querying nearest matches.
+- `src/learn/qdrant_storage/` — Local directory used for Qdrant metadata/state.
+
+Flow:
+1. A collection is created if it does not exist
+2. Vectors are stored with their payload text and source metadata
+3. A search request sends a query vector to Qdrant
+4. Matching document chunks are returned as context for retrieval
+
+### 4. Runtime Services
+These are the external service boundaries shared by the app.
+
+- Google GenAI — Acts as the embedding provider.
+- Qdrant — Stores and searches vectors.
+- FastAPI — Hosts the web app interface / HTTP boundary.
+- Inngest — Handles workflow events and async function triggers.
 
 ## Repository Structure
 
-```
+```text
 Learn/
-├── pyproject.toml
-├── README.md                         # Currently empty
+├── pyproject.toml                              # Project config, dependencies, and packaging setup
+├── README.md                                   # Project readme placeholder
 ├── Project-data/
-│   ├── ARCHITECTURE.md               # This document
-│   └── PROJECT_STATUS_SUMMARY.txt
-└── src/
-    └── learn/
-        ├── __init__.py               # Currently empty
-        ├── main.py                   # FastAPI and Inngest setup
-        ├── vector_db.py  
-        └── qdrant_storage/           # Currently empty
+│   ├── ARCHITECTURE.md                         # Architecture overview for the project
+│   └── PROJECT_STATUS_SUMMARY.txt              # Simple project status summary
+├── src/
+│   └── learn/
+│       ├── __init__.py                         # Package initialization file
+│       ├── main.py                             # FastAPI + Inngest application entry point
+│       ├── data_loader.py                      # PDF loading, chunking, and embedding generation
+│       ├── vector_db.py                        # Qdrant storage and similarity search wrapper
+│       └── qdrant_storage/                    # Local storage directory for Qdrant state/collections
 ```
 
-## Runtime Architecture
+## Architectural Responsibility Split
 
-The current application has one implemented runtime module, `src/learn/main.py`:
+- `main.py` handles app startup and workflow trigger setup.
+- `data_loader.py` handles document ingestion and embedding preparation.
+- `vector_db.py` handles persistence and retrieval.
+- `qdrant_storage/` stores vector database state.
+- `pyproject.toml` defines the software stack and package setup.
 
-1. `python-dotenv` loads values from a local `.env` file into the process environment.
-2. A logger named `uvicorn` is passed to the Inngest client.
-3. An `inngest.Inngest` client is created with the application ID `rag_app`, production mode disabled, and `PydanticSerializer`.
-4. The `rag_agent_pdf` async function is registered with Inngest.
-5. The function listens for the event `rag/ingest_pdf` and currently returns the placeholder payload `{"hello": "world"}`.
-6. A `FastAPI` application object is created.
-7. `inngest.fast_api.serve` mounts the registered Inngest function onto the FastAPI application.
+## Current Reality
 
-There are currently no application-defined REST routes, document-processing steps, model calls, vector operations, or Streamlit views. Requests to an undefined route, such as `/`, return FastAPI's normal `404 Not Found` response.
+The architecture is intentionally simple and still in progress:
 
-## Active Components
+- FastAPI and Inngest are connected.
+- PDF reading and text chunking are implemented.
+- Embedding generation is implemented.
+- Qdrant storage and search are implemented.
+- The workflow is still a foundation, not a full production pipeline yet.
 
-### FastAPI and Uvicorn
-
-FastAPI provides the ASGI application object in `main.py`. Uvicorn is the server used to run that application during development.
-
-### Inngest
-
-Inngest is the only registered workflow integration. The single workflow is identified as `RAG: Ingest app` and is triggered by the `rag/ingest_pdf` event. Its handler is asynchronous and accepts an `inngest.Context`, but its business logic is still a placeholder.
-
-### Environment Configuration
-
-`load_dotenv()` is called during module import. No environment variables are read directly by the current code, and no configuration validation is implemented.
-
-## Configured but Currently Unused
-
-The following dependencies are declared in `pyproject.toml` but have no implementation in `src/learn/` yet:
-
-- Google GenAI LLM and embedding integrations through LlamaIndex
-- LlamaIndex indexing, core, and file-reader packages
-- Qdrant client and the empty `qdrant_storage/` directory
-- Streamlit
-- Inngest experimental AI utilities
-
-Their presence indicates the intended technology choices, but they are not part of the current execution path.
-
-## Packaging and Execution
-
-The project uses a `src` layout and `uv_build` as its build backend. `pyproject.toml` declares the console script `learn = "learn:main"`; however, `learn/__init__.py` is currently empty, so that script target is not implemented yet. The working development invocation used for the current ASGI application is equivalent to running Uvicorn with `main:app` from `src/learn` (or the corresponding package-qualified module from the project root).
-
-## Current Boundaries and Gaps
-
-- The API boundary is only the FastAPI application plus the routes mounted by `inngest.fast_api.serve`.
-- The workflow boundary exists, but the PDF ingestion workflow performs no ingestion.
-- There is no persistence layer or Qdrant connection.
-- There is no LLM or embedding initialization.
-- There is no user interface layer.
-- There are no project tests, explicit error handling, or input validation in the current source tree.
+This means the project already contains the basic building blocks of a document RAG system, but the end-to-end orchestration is not fully connected yet.
