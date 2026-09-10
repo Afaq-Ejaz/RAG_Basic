@@ -1,42 +1,36 @@
-PROJECT STATUS SUMMARY - LEARN
+PROJECT STATUS SUMMARY: LEARN (PDF RAG)
+========================================
 
-This project is a beginner-friendly PDF RAG app. It is not finished yet, but the main building blocks are already in place.
+OVERVIEW
+A modular, event-driven PDF RAG service built with FastAPI, Inngest, Google GenAI embeddings, and Qdrant.
 
-WHAT EXISTS
-- A Python package structure under src/learn
-- A FastAPI app and Inngest trigger setup in main.py
-- PDF loading and chunking logic in data_loader.py
-- Qdrant-based vector database wrapper in vector_db.py
-- A local Qdrant storage folder in qdrant_storage/
-- Dependencies configured in pyproject.toml
+TECH STACK
+- Language/Env : Python (>=3.14), uv
+- API & Steps  : FastAPI, Inngest (durable multi-step execution)
+- Ingestion    : LlamaIndex (PDFReader, SentenceSplitter)
+- Embeddings   : Google GenAI (gemini-embedding-001, 3072 dimensions)
+- Vector Store : Qdrant (cosine similarity, port 6333 / local storage)
+- Schemas      : Pydantic v2
 
-HOW IT WORKS
-1. The app starts from main.py.
-2. A PDF is processed through data_loader.py.
-3. The text is split into chunks.
-4. Embeddings are generated using Google GenAI.
-5. Those vectors are stored in Qdrant using vector_db.py.
-6. The system can later search similar content by vector similarity.
+FILE MAP
+- Project-data/CONCEPTS_DECODED.md: Deep-dive concept breakdowns & mental models
+- src/learn/main.py         : FastAPI app + Inngest step workflow (`rag/ingest_pdf`)
+- src/learn/custom_types.py : Pydantic schemas (`RAGChunkAndSrc`, `RAGUpsertResult`, etc.)
+- src/learn/data_loader.py  : PDF loading, chunking (1000/200), and Gemini embeddings
+- src/learn/vector_db.py    : Qdrant client wrapper (init collection, upsert, search)
+- src/learn/qdrant_storage/ : Local disk storage for Qdrant
 
 CURRENT STATUS
-- Core architecture is in place
-- PDF ingestion logic exists
-- Embedding generation exists
-- Vector storage and search code exists
-- End-to-end flow is not fully connected yet
-- API routes and workflow logic still need completion
+[x] PDF loading & chunking (LlamaIndex SentenceSplitter)
+[x] Gemini text embeddings (3072-dim RETRIEVAL_DOCUMENT)
+[x] Qdrant storage client (collection init, batch upsert, query_points search)
+[x] Pydantic models for step boundaries & payloads
+[x] Inngest job setup with step declarations (`load-and-chunk`, `embed-and-upsert`)
+[ ] Implementation inside `_load` and `_upsert` in `main.py` (wiring existing components)
+[ ] Query / retrieval endpoint + LLM generation step (context -> answer)
+[ ] Frontend / chat interface (Streamlit listed in dependencies)
 
-WHAT IS LEFT
-- Connect the full workflow from upload to retrieval
-- Add proper API endpoints and a user-facing flow
-- Improve environment and error handling
-- Add tests and project documentation
-
-SIMPLE FILE VIEW
-- main.py = app startup and event trigger
-- data_loader.py = read PDF + create embeddings
-- vector_db.py = save/search vectors in Qdrant
-- qdrant_storage/ = database state folder
-- pyproject.toml = project setup and dependencies
-
-This is a solid foundation for learning how a document-based AI system is built one step at a time.
+NEXT ACTIONS
+1. Implement `_load` and `_upsert` handlers in `main.py` using `data_loader` and `vector_db`.
+2. Add search + generation flow to produce `RAGQueryResult`.
+3. Verify end-to-end ingestion via Inngest dev server (`npx inngest-cli@latest dev`).

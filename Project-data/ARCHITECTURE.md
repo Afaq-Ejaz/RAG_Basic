@@ -1,107 +1,89 @@
-# Project Architecture: Learn
+# Architecture: Learn (PDF RAG)
 
-This project is a small RAG-style application architecture built around PDF ingestion, embedding generation, vector storage, and a lightweight API/workflow layer. The design is simple and modular: each piece does one job, and they connect through a clear data flow.
+A lightweight, event-driven PDF RAG pipeline combining **FastAPI**, **Inngest**, **Google GenAI**, and **Qdrant**.
 
-## High-Level Architecture
+---
+
+## 1. System Pipelines
+
+### A. Ingestion Flow (Event-Driven)
+Triggered asynchronously via Inngest event `rag/ingest_pdf`:
 
 ```text
-PDF File
-   ↓
-data_loader.py
-   ↓
-Chunk text into smaller parts
-   ↓
-Google GenAI embeddings
-   ↓
-vector_db.py
-   ↓
-Qdrant vector database
-   ↓
-Similarity search / retrieval
-   ↓
-FastAPI + Inngest entry point
+[PDF File]
+   │
+   ▼
+[Step 1: load-and-chunk] ────► LlamaIndex PDFReader + SentenceSplitter (1000/200)
+   │                           Returns: RAGChunkAndSrc
+   ▼
+[Step 2: embed-and-upsert] ──► Gemini embed_content (gemini-embedding-001, 3072d)
+   │                           Qdrant upsert (collection: "docs", cosine)
+   ▼                           Returns: RAGUpsertResult
+[Qdrant Storage]
 ```
 
-This means the application is intended to work like a basic document search system:
-- load PDF content,
-- split it into chunks,
-- create vector embeddings,
-- save and retrieve them from Qdrant,
-- expose the workflow through FastAPI and Inngest.
+### B. Retrieval & Synthesis Flow (Planned)
+Synchronous query endpoint for Q&A:
 
-## Core Design
+```text
+[User Query]
+   │
+   ▼
+[Embed Query] ───────────────► Gemini Embedding (RETRIEVAL_QUERY)
+   │
+   ▼
+[Vector Search] ─────────────► Qdrant query_points (top_k=5)
+   │                           Returns: RAGSearchResult (contexts, sources)
+   ▼
+[LLM Generation] ────────────► Gemini Chat / LlamaIndex LLM
+   │                           Returns: RAGQueryResult (answer, sources, num_context)
+[Response]
+```
 
-### 1. Application Entry Layer
-The app starts from the web/workflow layer and acts as the orchestrator.
+---
 
-- `src/learn/main.py` — Starts the FastAPI app and registers the Inngest function responsible for the PDF workflow.
-- `pyproject.toml` — Declares project metadata, dependencies, and the app script entry.
+## 2. Component Map & Contracts
 
-### 2. Document Processing Layer
-This layer takes raw PDF files and prepares them for search.
+| Module | Core Responsibility | Key Types / I/O |
+| :--- | :--- | :--- |
+| [main.py](file:///f:/Learn/src/learn/main.py) | FastAPI app + Inngest durable workflow runner (`rag_agent_pdf`) | Inngest Event -> `RAGUpsertResult` |
+| [custom_types.py](file:///f:/Learn/src/learn/custom_types.py) | Pydantic data schemas across pipeline steps | `RAGChunkAndSrc`, `RAGUpsertResult`, `RAGSearchResult`, `RAGQueryResult` |
+| [data_loader.py](file:///f:/Learn/src/learn/data_loader.py) | PDF text extraction (`PDFReader`), chunking (`SentenceSplitter`), Gemini embeddings | Input: `path: str` / `list[str]`<br>Output: `chunks: list[str]`, `embeddings: list[list[float]]` |
+| [vector_db.py](file:///f:/Learn/src/learn/vector_db.py) | Qdrant client wrapper for collection creation, batch upsert, and similarity search | Input: `ids, vectors, payloads`<br>Output: `{"contexts": [...], "sources": {...}}` |
+| `qdrant_storage/` | Local persistence directory for Qdrant | Vector index and payload storage |
 
-- `src/learn/data_loader.py` — Loads a PDF, splits text into chunks, and creates embeddings using Google GenAI.
+---
 
-Flow:
-1. PDF is read using `PDFReader`
-2. Text is chopped into chunks using `SentenceSplitter`
-3. Each chunk is converted into a vector using `genai.Client().models.embed_content`
-4. The vector output is ready for storage and similarity search
-
-### 3. Vector Storage Layer
-This layer stores vectors and handles retrieval.
-
-- `src/learn/vector_db.py` — Wraps Qdrant operations for collection creation, upserting vectors, and querying nearest matches.
-- `src/learn/qdrant_storage/` — Local directory used for Qdrant metadata/state.
-
-Flow:
-1. A collection is created if it does not exist
-2. Vectors are stored with their payload text and source metadata
-3. A search request sends a query vector to Qdrant
-4. Matching document chunks are returned as context for retrieval
-
-### 4. Runtime Services
-These are the external service boundaries shared by the app.
-
-- Google GenAI — Acts as the embedding provider.
-- Qdrant — Stores and searches vectors.
-- FastAPI — Hosts the web app interface / HTTP boundary.
-- Inngest — Handles workflow events and async function triggers.
-
-## Repository Structure
+## 3. Project Structure
 
 ```text
 Learn/
-├── pyproject.toml                              # Project config, dependencies, and packaging setup
-├── README.md                                   # Project readme placeholder
+├── pyproject.toml              # Dependencies & scripts (FastAPI, Inngest, LlamaIndex, Qdrant)
+├── README.md                   # Project overview
 ├── Project-data/
-│   ├── ARCHITECTURE.md                         # Architecture overview for the project
-│   └── PROJECT_STATUS_SUMMARY.txt              # Simple project status summary
-├── src/
-│   └── learn/
-│       ├── __init__.py                         # Package initialization file
-│       ├── main.py                             # FastAPI + Inngest application entry point
-│       ├── data_loader.py                      # PDF loading, chunking, and embedding generation
-│       ├── vector_db.py                        # Qdrant storage and similarity search wrapper
-│       └── qdrant_storage/                    # Local storage directory for Qdrant state/collections
+│   ├── ARCHITECTURE.md         # This file
+│   ├── CONCEPTS_DECODED.md     # In-depth mental models & tutorial-escape guide
+│   └── PROJECT_STATUS_SUMMARY.txt # Quick status cheat-sheet
+└── src/
+    └── learn/
+        ├── __init__.py
+        ├── main.py             # FastAPI + Inngest workflow orchestrator
+        ├── custom_types.py     # Shared Pydantic data models
+        ├── data_loader.py      # PDF parsing & Gemini embedding generator
+        ├── vector_db.py        # Qdrant client wrapper
+        └── qdrant_storage/     # Local vector store data
 ```
 
-## Architectural Responsibility Split
+---
 
-- `main.py` handles app startup and workflow trigger setup.
-- `data_loader.py` handles document ingestion and embedding preparation.
-- `vector_db.py` handles persistence and retrieval.
-- `qdrant_storage/` stores vector database state.
-- `pyproject.toml` defines the software stack and package setup.
+## 4. Current State & Implementation Gaps
 
-## Current Reality
-
-The architecture is intentionally simple and still in progress:
-
-- FastAPI and Inngest are connected.
-- PDF reading and text chunking are implemented.
-- Embedding generation is implemented.
-- Qdrant storage and search are implemented.
-- The workflow is still a foundation, not a full production pipeline yet.
-
-This means the project already contains the basic building blocks of a document RAG system, but the end-to-end orchestration is not fully connected yet.
+- **Ready**:
+  - `data_loader.py` can load, chunk, and embed documents.
+  - `vector_db.py` can initialize collections, upsert vectors, and execute similarity queries.
+  - `custom_types.py` specifies all data contracts.
+  - `main.py` has the Inngest function structure and step layout.
+- **In Progress**:
+  - Implement the internal `_load` and `_upsert` logic in `main.py` using `data_loader` and `vector_db`.
+  - Add query/search handler to feed retrieved context into Gemini for question answering (`RAGQueryResult`).
+  - Add API trigger endpoints or UI (Streamlit).
