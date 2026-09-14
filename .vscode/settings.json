@@ -1,5 +1,6 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python-envs.defaultPackageManager": "ms-python.python:pip",
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe"
 }
